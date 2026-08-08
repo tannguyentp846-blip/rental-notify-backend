@@ -28,7 +28,7 @@ app.add_middleware(
 
 # ---- Cấu hình nguồn crawl: điền URL search THẬT của bạn (đã lọc theo khu vực trên chính website) ----
 SEARCH_URLS = {
-    "batdongsan": "https://batdongsan.com.vn/cho-thue-nha-quan-7",
+    "batdongsan": "https://batdongsan.com.vn",
     "chotot": "https://www.chotot.com/tp-ho-chi-minh/thue-nha",
 }
 GOOGLE_ALERT_FEEDS: List[str] = [
