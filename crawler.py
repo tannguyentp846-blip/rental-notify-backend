@@ -1,16 +1,12 @@
 """
-Crawler cho các website cho thuê nhà chính thống.
+Crawler cho các website cho thuê nhà.
 
-LƯU Ý QUAN TRỌNG: Selector HTML (class name, tag) trong file này là VÍ DỤ
-MINH HOẠ. Cấu trúc HTML thật của các trang thay đổi thường xuyên, bạn cần:
-  1. Mở trang web, dùng "Inspect Element" (chuột phải > Kiểm tra) để xem
-     đúng class/tag hiện tại của tiêu đề, giá, diện tích...
-  2. Cập nhật lại các selector bên dưới cho khớp
-
-CÁCH LỌC THEO TỈNH/QUẬN: thay vì để crawler tự đoán quận/huyện từ text (dễ
-sai), cách đáng tin cậy hơn là dùng SEARCH_URLS trong main.py — dán URL kết
-quả tìm kiếm đã áp filter khu vực SẴN trên chính trang web đó. Backend chỉ
-việc crawl đúng URL đó, không cần tự nhận diện quận/huyện.
+CÁCH HOẠT ĐỘNG: thay vì đoán tên class CSS (dễ sai vì web hay đổi giao diện),
+crawler này nhận diện tin đăng qua CẤU TRÚC ĐƯỜNG LINK — mọi tin trên
+batdongsan.com.vn đều có URL kết thúc dạng "...-prNNNNNNN" (số ID tin đăng).
+Sau khi tìm được link, nó đọc đoạn text xung quanh (trong cùng thẻ cha) để
+tìm giá (dạng "X triệu/tháng") và diện tích (dạng "X m²"). Cách này bền hơn
+nhiều so với dựa vào tên class, vốn có thể đổi bất cứ lúc nào.
 """
 import requests
 from bs4 import BeautifulSoup
@@ -24,78 +20,75 @@ HEADERS = {
 }
 
 
-def parse_price_to_million(price_text: str):
-    """Chuyển '5 triệu/tháng' hoặc '5,000,000 đ' thành số (đơn vị: triệu VNĐ)"""
-    if not price_text:
+def parse_price_to_million(text: str):
+    """Chuyển '5 triệu/tháng' thành số (đơn vị: triệu VNĐ)"""
+    if not text:
         return None
-    text = price_text.lower()
-    numbers = re.findall(r"[\d.,]+", text)
-    if not numbers:
+    match = re.search(r"([\d.,]+)\s*tri", text, re.IGNORECASE)
+    if not match:
         return None
-    raw = numbers[0].replace(",", "").replace(".", "")
-    if not raw.isdigit():
+    raw = match.group(1).replace(".", "").replace(",", ".")
+    try:
+        return float(raw)
+    except ValueError:
         return None
-    value = float(raw)
-    if "triệu" in text:
-        return value
-    if value > 1000:  # có thể là số VNĐ đầy đủ, quy đổi ra triệu
-        return round(value / 1_000_000, 2)
-    return value
 
 
-def parse_area_to_number(area_text: str):
-    """Chuyển '35 m2' thành số"""
-    if not area_text:
+def parse_area_to_number(text: str):
+    """Chuyển '35 m²' thành số"""
+    if not text:
         return None
-    match = re.search(r"[\d.]+", area_text)
-    return float(match.group()) if match else None
+    match = re.search(r"([\d.,]+)\s*m", text)
+    if not match:
+        return None
+    try:
+        return float(match.group(1).replace(",", "."))
+    except ValueError:
+        return None
 
 
-def crawl_generic(search_url: str, source_name: str, item_selector: str,
-                   title_selector: str, price_selector: str = None,
-                   area_selector: str = None) -> List[Dict]:
-    """
-    Hàm crawl dùng chung — truyền vào các CSS selector tương ứng với từng
-    website. Xem ví dụ cấu hình cho batdongsan/chotot bên dưới.
-    """
+def crawl_batdongsan(search_url: str) -> List[Dict]:
     results = []
     try:
         resp = requests.get(search_url, headers=HEADERS, timeout=15)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
-        items = soup.select(item_selector)
 
-        for item in items:
-            try:
-                title_el = item.select_one(title_selector)
-                link_el = item.select_one("a")
-                if not title_el or not link_el:
-                    continue
+        seen = set()
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if not re.search(r"-pr\d+", href):
+                continue  # không phải link tin đăng
 
-                url = link_el.get("href", "")
-                if url and not url.startswith("http"):
-                    base = "/".join(search_url.split("/")[:3])
-                    url = base + url
-
-                price_el = item.select_one(price_selector) if price_selector else None
-                area_el = item.select_one(area_selector) if area_selector else None
-
-                results.append({
-                    "source": source_name,
-                    "external_id": url,
-                    "title": title_el.get_text(strip=True),
-                    "price": parse_price_to_million(price_el.get_text(strip=True) if price_el else None),
-                    "area": parse_area_to_number(area_el.get_text(strip=True) if area_el else None),
-                    "city": None,        # để trống — dựa vào URL đã lọc sẵn theo khu vực
-                    "district": None,
-                    "property_type": None,
-                    "bedrooms": None,
-                    "url": url,
-                    "raw_text": title_el.get_text(strip=True),
-                })
-            except Exception as e:
-                print(f"Lỗi parse 1 item từ {source_name}: {e}")
+            url = href if href.startswith("http") else "https://batdongsan.com.vn" + href
+            if url in seen:
                 continue
+            seen.add(url)
+
+            title = (a.get("title") or a.get_text(strip=True) or "").strip()
+            if len(title) < 10:
+                continue  # bỏ qua link rác (nút chia sẻ, icon...)
+
+            # Tìm giá/diện tích trong text của thẻ cha chứa link này
+            container = a.find_parent(["div", "li"]) or a
+            context_text = container.get_text(" ", strip=True)
+
+            results.append({
+                "source": "batdongsan",
+                "external_id": url,
+                "title": title,
+                "price": parse_price_to_million(context_text),
+                "area": parse_area_to_number(context_text),
+                "city": None,
+                "district": None,
+                "property_type": None,
+                "bedrooms": None,
+                "url": url,
+                "raw_text": context_text[:400],
+            })
+
+            if len(results) >= 40:
+                break
 
     except requests.RequestException as e:
         print(f"Lỗi crawl {search_url}: {e}")
@@ -103,28 +96,51 @@ def crawl_generic(search_url: str, source_name: str, item_selector: str,
     return results
 
 
-def crawl_batdongsan(search_url: str) -> List[Dict]:
-    return crawl_generic(
-        search_url,
-        source_name="batdongsan",
-        item_selector="div.js__card, div.re__card-full",
-        title_selector="span.pr-title, h3",
-        price_selector="span.re__card-config-price",
-        area_selector="span.re__card-config-area",
-    )
-
-
 def crawl_chotot(search_url: str) -> List[Dict]:
-    return crawl_generic(
-        search_url,
-        source_name="chotot",
-        item_selector="li.list-view-item, div.AdItem_adItem__",
-        title_selector="h3, span.ad-title",
-    )
+    """Chotot chưa được kiểm chứng thực tế — có thể cần điều chỉnh thêm."""
+    results = []
+    try:
+        resp = requests.get(search_url, headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        seen = set()
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if not re.search(r"\d{8,}", href):  # chotot dùng ID số dài trong URL
+                continue
+            url = href if href.startswith("http") else "https://www.chotot.com" + href
+            if url in seen:
+                continue
+            seen.add(url)
+
+            title = (a.get("title") or a.get_text(strip=True) or "").strip()
+            if len(title) < 10:
+                continue
+
+            container = a.find_parent(["div", "li"]) or a
+            context_text = container.get_text(" ", strip=True)
+
+            results.append({
+                "source": "chotot",
+                "external_id": url,
+                "title": title,
+                "price": parse_price_to_million(context_text),
+                "area": parse_area_to_number(context_text),
+                "city": None, "district": None, "property_type": None, "bedrooms": None,
+                "url": url,
+                "raw_text": context_text[:400],
+            })
+            if len(results) >= 40:
+                break
+
+    except requests.RequestException as e:
+        print(f"Lỗi crawl {search_url}: {e}")
+
+    return results
 
 
 def run_all_crawlers(search_urls: Dict[str, str]) -> List[Dict]:
-    """search_urls: dict dạng {"batdongsan": "https://...", "chotot": "https://..."}"""
     all_results = []
     if "batdongsan" in search_urls:
         all_results.extend(crawl_batdongsan(search_urls["batdongsan"]))
