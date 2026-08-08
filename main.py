@@ -27,9 +27,12 @@ app.add_middleware(
 )
 
 # ---- Cấu hình nguồn crawl: điền URL search THẬT của bạn (đã lọc theo khu vực trên chính website) ----
+# Để đổi khu vực, vào trang web tương ứng, tự lọc theo khu vực bạn muốn, rồi copy URL dán vào đây.
 SEARCH_URLS = {
-    "batdongsan": "https://batdongsan.com.vn",
-    "chotot": "https://www.chotot.com/tp-ho-chi-minh/thue-nha",
+    "batdongsan": "https://batdongsan.com.vn/cho-thue-nha-rieng-quan-7",
+    "nhatot_house": "https://www.nhatot.com/thue-nha-dat-quan-7-tp-ho-chi-minh",
+    "nhatot_room": "https://www.nhatot.com/thue-phong-tro-quan-7-tp-ho-chi-minh",
+    "alonhadat": "https://alonhadat.com.vn/cho-thue-nha-quan-7-ho-chi-minh-q138.htm",
 }
 GOOGLE_ALERT_FEEDS: List[str] = [
     # "https://www.google.com/alerts/feeds/xxxx/yyyy",
