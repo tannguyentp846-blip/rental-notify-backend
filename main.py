@@ -102,6 +102,13 @@ def save_filter(payload: FilterIn, db: Session = Depends(get_db)):
 
 
 # ---------- API chính: crawl ngay + lọc theo bộ lọc đã lưu, trả về kết quả ----------
+# ---------- API debug: xem crawler có lấy được tin thật không (bỏ qua bộ lọc) ----------
+@app.get("/debug/crawl")
+def debug_crawl():
+    raw = run_all_crawlers(SEARCH_URLS)
+    return {"count": len(raw), "sample": raw[:5]}
+
+
 @app.get("/listings/fetch")
 def fetch_listings(db: Session = Depends(get_db)):
     """
