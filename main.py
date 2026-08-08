@@ -12,7 +12,7 @@ from typing import Optional, List
 from datetime import datetime
 
 from models import init_db, get_db, SearchFilter, Listing
-from crawler import run_all_crawlers
+from crawler import run_all_crawlers, debug_crawl_per_source
 from rss_alerts import run_all_alert_feeds
 from matcher import find_matches
 
@@ -104,12 +104,20 @@ def save_filter(payload: FilterIn, db: Session = Depends(get_db)):
     return filter_to_response(f)
 
 
-# ---------- API chính: crawl ngay + lọc theo bộ lọc đã lưu, trả về kết quả ----------
 # ---------- API debug: xem crawler có lấy được tin thật không (bỏ qua bộ lọc) ----------
 @app.get("/debug/crawl")
 def debug_crawl():
     raw = run_all_crawlers(SEARCH_URLS)
     return {"count": len(raw), "sample": raw[:5]}
+
+
+# ---------- API debug chi tiết: kiểm tra riêng từng nguồn (HTTP status, số tin, có bị chặn không) ----------
+@app.get("/debug/crawl-per-source")
+def debug_crawl_per_source_endpoint():
+    return debug_crawl_per_source(SEARCH_URLS)
+
+
+# ---------- API chính: crawl ngay + lọc theo bộ lọc đã lưu, trả về kết quả ----------
 
 
 @app.get("/listings/fetch")
